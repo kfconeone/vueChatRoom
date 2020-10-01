@@ -1,12 +1,40 @@
 <template>
-    <div id="app" class="container-fluid ">
-        <div class="row" v-for="(room, index) in rooms" :key="room.id" style="margin-top:10px">
-            <button type="button" class="btn" :class="room.isRead ? 'btn-light' : 'btn-danger'" @click="setChatroom(room.id)">客戶{{ index }}</button>
+    <div id="app" class="container-fluid">
+        <div
+            class="row"
+            v-for="(room, index) in rooms"
+            :key="room.id"
+            style="margin-top: 10px"
+        >
+            <button
+                type="button"
+                class="btn"
+                :class="room.isRead ? 'btn-light' : 'btn-danger'"
+                @click="setChatroom(room.id)"
+            >
+                客戶{{ index }}
+            </button>
         </div>
 
         <div class="row justify-content-end fixed-bottom">
             <div class="col chatroom">
-                <Chat id="chat-window" v-if="visible" :participants="participants" :myself="myself" :messages="messages" :chat-title="chatTitle" :placeholder="placeholder" :profilePictureConfig="profilePictureConfig" :colors="colors" :scroll-bottom="scrollBottom" :display-header="true" :send-images="false" @onMessageSubmit="onMessageSubmit" @onType="onType" @onClose="onClose" />
+                <Chat
+                    id="chat-window"
+                    v-if="visible"
+                    :participants="participants"
+                    :myself="myself"
+                    :messages="messages"
+                    :chat-title="chatTitle"
+                    :placeholder="placeholder"
+                    :profilePictureConfig="profilePictureConfig"
+                    :colors="colors"
+                    :scroll-bottom="scrollBottom"
+                    :display-header="true"
+                    :send-images="false"
+                    @onMessageSubmit="onMessageSubmit"
+                    @onType="onType"
+                    @onClose="onClose"
+                />
             </div>
         </div>
     </div>
@@ -17,6 +45,7 @@ import firebase from "firebase";
 import dateFormat from "dateformat";
 import { Chat } from "vue-quick-chat";
 import "vue-quick-chat/dist/vue-quick-chat.css";
+
 export default {
     name: "App",
     components: { Chat },
@@ -26,7 +55,7 @@ export default {
             visible: false,
             participants: [
                 {
-                    name: "",
+                    name: "客戶",
                     id: 1,
                 },
             ],
@@ -96,7 +125,6 @@ export default {
             },
             //頁面元素
             messageText: "",
-            nickname: "hootlex",
             rooms: [],
 
             //db元素
@@ -121,10 +149,33 @@ export default {
         this.database = firebase.database();
         this.rootRef = this.database.ref("chatroom");
         let self = this;
-        this.rootRef.on("value", function(snapshot) {
+
+        this.rootRef.once("value", function (snapshot) {
+            snapshot.forEach(function (childSnapshot) {
+                let timespan = new Date(
+                    new Date() -
+                        new Date(Date.parse(childSnapshot.val().updateDatetime))
+                );
+                console.log(timespan.getHours());
+
+                if (timespan.getHours() > 24) {
+                    self.rootRef.child(childSnapshot.key).remove();
+                }
+            });
+        });
+
+        this.rootRef.on("value", function (snapshot) {
             let tempRoom = [];
-            snapshot.forEach(function(childSnapshot) {
-                tempRoom.push({ id: childSnapshot.key, isRead: childSnapshot.val().isRead });
+            snapshot.forEach(function (childSnapshot) {
+                tempRoom.push({
+                    id: childSnapshot.key,
+                    isRead: childSnapshot.val().isRead,
+                });
+
+                if (childSnapshot.val().isRead == false) {
+                    window.document.getElementById("link-myIcon").href =
+                        "/StorePage/favicon2.gif";
+                }
             });
             self.rooms = tempRoom;
         });
@@ -146,61 +197,67 @@ export default {
         // console.log(this.$cookies.keys());
     },
     methods: {
-        storeMessage() {
-            this.$cookies.set("user_session", this.currentChatroomRef.key, 10);
-            this.currentChatroomRef.set({ isRead: false });
+        setChatroom(id) {
+            console.log(id);
+            window.document.getElementById("link-myIcon").href =
+                "/StorePage/favicon.ico";
+            let self = this;
+            self.messages.length = 0;
+            this.currentChatroomRef = this.rootRef.child(id);
+
+            this.currentChatroomRef.update({
+                updateDatetime: dateFormat(new Date(), "yyyy-mm-dd HH:MM:ss"),
+                isRead: true,
+            });
+
+            this.currentChatroomRef
+                .child("messages")
+                .on("child_added", (snapshot) => {
+                    let msg = {};
+                    msg.content = snapshot.val().content;
+                    msg.type = "text";
+                    let time = new Date(Date.parse(snapshot.val().datetime));
+                    msg.timestamp = {
+                        year: time.getFullYear(),
+                        month: time.getMonth(),
+                        day: time.getDate(),
+                        hour: time.getHours(),
+                        minute: time.getMinutes(),
+                        second: time.getSeconds(),
+                        millisecond: time.getMilliseconds(),
+                    };
+                    if (snapshot.val().nickname == self.myself.name) {
+                        msg.participantId = 2;
+                        msg.myself = true;
+                    } else {
+                        msg.participantId = 1;
+                        msg.myself = false;
+                    }
+
+                    // {
+                    //     content: "received messages",
+                    //     myself: false,
+                    //     participantId: 1,
+                    //     timestamp: { year: 2019, month: 3, day: 5, hour: 20, minute: 10, second: 3, millisecond: 123 },
+                    //     type: "text",
+                    // }
+
+                    self.messages.push(msg);
+                });
+            this.visible = true;
+        },
+        onType: function (event) {
+            console.log(event);
+        },
+        onMessageSubmit: function (message) {
             this.currentChatroomRef
                 .child("messages")
                 .push()
                 .set({
                     datetime: dateFormat(new Date(), "yyyy-mm-dd HH:MM:ss"),
-                    nickname: this.nickname,
-                    text: this.messageText,
+                    nickname: this.myself.name,
+                    content: message.content,
                 });
-            this.messageText = "";
-        },
-        setChatroom(id) {
-            console.log(id);
-            let self = this;
-            this.currentChatroomRef = this.rootRef.child(id);
-            console.log(this.rootRef.key);
-            console.log(this.currentChatroomRef.key);
-            this.currentChatroomRef.update({
-                updateDatetime: dateFormat(new Date(), "yyyy-mm-dd HH:MM:ss"),
-            });
-
-            this.currentChatroomRef.child("messages").on("child_added", (snapshot) => {
-                let msg = {};
-                console.log(snapshot.val().content);
-                msg.content = snapshot.val().content;
-                msg.type = "text";
-                let time = new Date(Date.parse(snapshot.val().datetime));
-                msg.timestamp = { year: time.getFullYear(), month: time.getMonth(), day: time.getDate(), hour: time.getHours(), minute: time.getMinutes(), second: time.getSeconds(), millisecond: time.getMilliseconds() };
-                if (snapshot.val().nickname == "客服人員") {
-                    msg.participantId = 2;
-                    msg.myself = true;
-                } else {
-                    msg.participantId = 1;
-                    msg.myself = false;
-                }
-
-                // {
-                //     content: "received messages",
-                //     myself: false,
-                //     participantId: 1,
-                //     timestamp: { year: 2019, month: 3, day: 5, hour: 20, minute: 10, second: 3, millisecond: 123 },
-                //     type: "text",
-                // }
-
-                self.messages.push(msg);
-            });
-            this.visible = true;
-        },
-        onType: function(event) {
-            console.log(event);
-        },
-        onMessageSubmit: function(message) {
-            this.messages.push(message);
             setTimeout(() => {
                 message.uploaded = true;
             }, 2000);
@@ -212,17 +269,14 @@ export default {
 };
 </script>
 
-<style>
+<style scoped>
 #chat-window {
     max-height: 600px;
+    min-height: 400px;
     max-width: 400px;
 }
 
 .col.chatroom {
     max-width: 400px;
-}
-
-.header-paticipants-text {
-    display: none;
 }
 </style>

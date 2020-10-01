@@ -1,47 +1,123 @@
 <template>
     <div id="chat" class="container">
-        <h1>Vue School Chat Room</h1>
-        <!-- Messages -->
-        <div v-for="(message, index) in messages" class="card" :key="index">
-            <div class="card-body">
-                <!-- nickname -->
-                <h6 class="card-subtitle mb-2 text-muted">
-                    {{ message.nickname }}
-                </h6>
-                <!-- content -->
-                <p class="card-text">{{ message.text }}</p>
+        <div
+            class="row justify-content-end fixed-bottom"
+            style="padding-right: 10px; padding-bottom: 20px"
+        >
+            <div class="col chatroom">
+                <Chat
+                    id="chat-window"
+                    v-if="visible"
+                    :participants="participants"
+                    :myself="myself"
+                    :messages="messages"
+                    :chat-title="chatTitle"
+                    :placeholder="placeholder"
+                    :profilePictureConfig="profilePictureConfig"
+                    :colors="colors"
+                    :scroll-bottom="scrollBottom"
+                    :display-header="true"
+                    :send-images="false"
+                    @onMessageSubmit="onMessageSubmit"
+                    @onClose="onClose"
+                />
             </div>
         </div>
-
-        <hr />
-        <!-- New Message -->
-        <form @submit.prevent="storeMessage">
-            <div class="form-group">
-                <label>Message:</label>
-                <textarea v-model="messageText" class="form-control"></textarea>
-            </div>
-            <div class="form-group">
-                <label>Nickname:</label>
-                <input v-model="nickname" class="form-control" />
-            </div>
-            <button class="btn btn-primary">Send</button>
-        </form>
+        <div
+            v-if="!visible"
+            class="row justify-content-end fixed-bottom"
+            style="padding-right: 30px; padding-bottom: 10px"
+        >
+            <img src="../assets/chatIcon.png" @click="onRoomOpen()" />
+        </div>
     </div>
 </template>
 
 <script>
 import firebase from "firebase";
 import dateFormat from "dateformat";
+import { Chat } from "vue-quick-chat";
+import "vue-quick-chat/dist/vue-quick-chat.css";
 
 export default {
     name: "Home",
-    components: {},
+    components: { Chat },
     data() {
         return {
+            //====聊天室元素====
+            visible: false,
+            participants: [
+                {
+                    name: "客服人員",
+                    id: 1,
+                },
+            ],
+            myself: {
+                name: "我",
+                id: 2,
+            },
+            messages: [
+                // {
+                //     content: "received messages",
+                //     myself: false,
+                //     participantId: 1,
+                //     timestamp: { year: 2019, month: 3, day: 5, hour: 20, minute: 10, second: 3, millisecond: 123 },
+                //     type: "text",
+                // },
+                // {
+                //     content: "sent messages",
+                //     myself: true,
+                //     participantId: 2,
+                //     timestamp: { year: 2019, month: 4, day: 5, hour: 19, minute: 10, second: 3, millisecond: 123 },
+                //     type: "text",
+                // },
+            ],
+            chatTitle: "客服系統",
+            placeholder: "請輸入訊息",
+            colors: {
+                header: {
+                    bg: "#d30303",
+                    text: "#fff",
+                },
+                message: {
+                    myself: {
+                        bg: "#fff",
+                        text: "#bdb8b8",
+                    },
+                    others: {
+                        bg: "#fb4141",
+                        text: "#fff",
+                    },
+                    messagesDisplay: {
+                        bg: "#f7f3f3",
+                    },
+                },
+                submitIcon: "#b91010",
+                submitImageIcon: "#b91010",
+            },
+            borderStyle: {
+                topLeft: "10px",
+                topRight: "10px",
+                bottomLeft: "10px",
+                bottomRight: "10px",
+            },
+
+            scrollBottom: {
+                messageSent: true,
+                messageReceived: false,
+            },
+            displayHeader: true,
+            profilePictureConfig: {
+                others: false,
+                myself: false,
+                styles: {
+                    width: "30px",
+                    height: "30px",
+                    borderRadius: "50%",
+                },
+            },
             //頁面元素
-            messages: [],
             messageText: "",
-            nickname: "hootlex",
             //db元素
             firebaseConfig: {
                 apiKey: "AIzaSyBNhudq5zJ3SGEuZl7ZccpWwDo_hv1iwfk",
@@ -60,6 +136,7 @@ export default {
     },
     created() {
         // Initialize Firebase
+
         firebase.initializeApp(this.firebaseConfig);
         this.database = firebase.database();
         this.rootRef = this.database.ref("chatroom");
@@ -67,43 +144,85 @@ export default {
             this.mychatroomRef = this.rootRef.child(
                 this.$cookies.get("user_session")
             );
-        } else {
-            this.mychatroomRef = this.rootRef.push();
-            this.$cookies.set("user_session", this.mychatroomRef.key);
+            this.registerRoom();
         }
-
-        this.mychatroomRef.update({
-            updateDatetime: dateFormat(new Date(), "yyyy-mm-dd HH:MM:ss"),
-        });
-        this.mychatroomRef
-            .child("messages")
-            .on("child_added", (snapshot) =>
-                this.messages.push(snapshot.val())
-            );
-        // this.$cookies.set("user_session", "25j_7Sl6xDq2Kc3ym0fmrSSk2xV2XkUkX", 10);
-        // console.log(this.$cookies.get("user_session"));
-        // this.$cookies.remove("user_session");
-        // console.log(this.$cookies.keys());
     },
     methods: {
-        storeMessage() {
-            this.$cookies.set("user_session", this.mychatroomRef.key);
-            this.mychatroomRef.update({ isRead: false });
-            this.mychatroomRef.child("messages").push({
-                datetime: dateFormat(new Date(), "yyyy-mm-dd HH:MM:ss"),
-                nickname: this.nickname,
-                content: this.messageText,
-            });
+        onRoomOpen() {
+            this.visible = true;
+        },
+        onMessageSubmit: function (message) {
+            if (!this.$cookies.isKey("user_session")) {
+                this.mychatroomRef = this.rootRef.push();
+                this.$cookies.set("user_session", this.mychatroomRef.key);
+                this.mychatroomRef.update({
+                    updateDatetime: dateFormat(
+                        new Date(),
+                        "yyyy-mm-dd HH:MM:ss"
+                    ),
+                    isRead: false,
+                });
 
-            // {
-            //     content: "received messages",
-            //     myself: false,
-            //     participantId: 1,
-            //     timestamp: { year: 2019, month: 3, day: 5, hour: 20, minute: 10, second: 3, millisecond: 123 },
-            //     type: "text",
-            // },
-            this.messageText = "";
+                this.registerRoom();
+            }
+
+            this.mychatroomRef.update({ isRead: false });
+            this.mychatroomRef
+                .child("messages")
+                .push()
+                .set({
+                    datetime: dateFormat(new Date(), "yyyy-mm-dd HH:MM:ss"),
+                    nickname: this.myself.name,
+                    content: message.content,
+                });
+            setTimeout(() => {
+                message.uploaded = true;
+            }, 2000);
+        },
+        onClose() {
+            this.visible = false;
+        },
+        registerRoom() {
+            let self = this;
+            this.mychatroomRef
+                .child("messages")
+                .on("child_added", function (snapshot) {
+                    let msg = {};
+                    msg.content = snapshot.val().content;
+                    msg.type = "text";
+                    let time = new Date(Date.parse(snapshot.val().datetime));
+                    msg.timestamp = {
+                        year: time.getFullYear(),
+                        month: time.getMonth(),
+                        day: time.getDate(),
+                        hour: time.getHours(),
+                        minute: time.getMinutes(),
+                        second: time.getSeconds(),
+                        millisecond: time.getMilliseconds(),
+                    };
+                    if (snapshot.val().nickname == self.myself.name) {
+                        msg.participantId = 2;
+                        msg.myself = true;
+                    } else {
+                        msg.participantId = 1;
+                        msg.myself = false;
+                    }
+
+                    self.messages.push(msg);
+                });
         },
     },
 };
 </script>
+
+<style scoped>
+#chat-window {
+    max-height: 600px;
+    min-height: 400px;
+    max-width: 400px;
+}
+
+.col.chatroom {
+    max-width: 400px;
+}
+</style>
